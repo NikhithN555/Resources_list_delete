@@ -1,0 +1,202 @@
+#!/bin/bash
+
+###############################################################################
+# Author: Nikhith N
+# Version: v0.0.2
+
+# AWS Resource Listing + Deletion Script
+#
+# Usage:
+# ./aws_resource_list.sh <aws_region> <aws_service> <action>
+#
+# Example:
+# ./aws_resource_list.sh ap-south-1 ec2 list
+# ./aws_resource_list.sh ap-south-1 ec2 delete
+###############################################################################
+
+# Check arguments
+if [ $# -lt 3 ]; then
+    echo "Usage: ./aws_resource_list.sh <region> <service> <action>"
+    exit 1
+fi
+
+aws_region=$1
+aws_service=$(echo "$2" | tr '[:upper:]' '[:lower:]')
+action=$3
+
+# Check AWS CLI
+if ! command -v aws &> /dev/null; then
+    echo "AWS CLI not installed"
+    exit 1
+fi
+
+# Check AWS config
+if [ ! -d ~/.aws ]; then
+    echo "AWS CLI not configured"
+    exit 1
+fi
+
+# Confirmation for delete
+confirm_delete() {
+    read -p "⚠️ Are you sure you want to delete? (yes/no): " confirm
+    if [ "$confirm" != "yes" ]; then
+        echo "Cancelled ❌"
+        exit 1
+    fi
+}
+
+# Main logic
+case $aws_service in
+
+# ================= EC2 =================
+ec2)
+    if [ "$action" == "list" ]; then
+        echo "Listing EC2 Instances in $aws_region"
+
+        aws ec2 describe-instances \
+        --region $aws_region \
+        --query 'Reservations[].Instances[].[
+            Tags[?Key==`Name`].Value | [0],
+            InstanceId,
+            InstanceType,
+            State.Name,
+            PublicIpAddress,
+            PrivateIpAddress,
+            Placement.AvailabilityZone
+        ]' \
+        --output table
+
+    elif [ "$action" == "delete" ]; then
+        read -p "Enter Instance ID: " instance_id
+        confirm_delete
+        echo "Terminating EC2: $instance_id"
+
+        aws ec2 terminate-instances \
+        --instance-ids $instance_id \
+        --region $aws_region
+
+    else
+        echo "Invalid action (use list/delete)"
+    fi
+    ;;
+
+# ================= S3 =================
+s3)
+    if [ "$action" == "list" ]; then
+        echo "Listing S3 Buckets"
+        aws s3 ls
+
+    elif [ "$action" == "delete" ]; then
+        read -p "Enter Bucket Name: " bucket
+        confirm_delete
+        echo "Deleting bucket: $bucket"
+
+        aws s3 rb s3://$bucket --force
+
+    else
+        echo "Invalid action"
+    fi
+    ;;
+
+# ================= RDS =================
+rds)
+    if [ "$action" == "list" ]; then
+        aws rds describe-db-instances --region $aws_region
+
+    elif [ "$action" == "delete" ]; then
+        read -p "Enter DB Instance Identifier: " db_id
+        confirm_delete
+
+        aws rds delete-db-instance \
+        --db-instance-identifier $db_id \
+        --skip-final-snapshot \
+        --region $aws_region
+    fi
+    ;;
+
+# ================= VPC =================
+vpc)
+    if [ "$action" == "list" ]; then
+        aws ec2 describe-vpcs --region $aws_region
+
+    elif [ "$action" == "delete" ]; then
+        read -p "Enter VPC ID: " vpc_id
+        confirm_delete
+
+        aws ec2 delete-vpc --vpc-id $vpc_id --region $aws_region
+    fi
+    ;;
+
+# ================= IAM =================
+iam)
+    if [ "$action" == "list" ]; then
+        aws iam list-users
+
+    elif [ "$action" == "delete" ]; then
+        read -p "Enter IAM Username: " user
+        confirm_delete
+
+        aws iam delete-user --user-name $user
+    fi
+    ;;
+
+# ================= Route53 =================
+route53)
+    if [ "$action" == "list" ]; then
+        aws route53 list-hosted-zones
+
+    else
+        echo "Delete not implemented for Route53 (safety)"
+    fi
+    ;;
+
+# ================= Lambda =================
+lambda)
+    if [ "$action" == "list" ]; then
+        aws lambda list-functions --region $aws_region
+
+    elif [ "$action" == "delete" ]; then
+        read -p "Enter Function Name: " fname
+        confirm_delete
+
+        aws lambda delete-function \
+        --function-name $fname \
+        --region $aws_region
+    fi
+    ;;
+
+# ================= DynamoDB =================
+dynamodb)
+    if [ "$action" == "list" ]; then
+        aws dynamodb list-tables --region $aws_region
+
+    elif [ "$action" == "delete" ]; then
+        read -p "Enter Table Name: " table
+        confirm_delete
+
+        aws dynamodb delete-table \
+        --table-name $table \
+        --region $aws_region
+    fi
+    ;;
+
+# ================= EBS =================
+ebs)
+    if [ "$action" == "list" ]; then
+        aws ec2 describe-volumes --region $aws_region
+
+    elif [ "$action" == "delete" ]; then
+        read -p "Enter Volume ID: " vol
+        confirm_delete
+
+        aws ec2 delete-volume \
+        --volume-id $vol \
+        --region $aws_region
+    fi
+    ;;
+
+# ================= DEFAULT =================
+*)
+    echo "Invalid service ❌"
+    ;;
+esac
